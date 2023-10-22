@@ -165,10 +165,17 @@ class train():
         :param ignore: loss mask
         :return: None
         """
+        if 'self.img0' in locals():
+            del self.img0, self.mask, self.ignore
+
         self.img0 = Variable(img0.type(self.dtype)).view(-1, 1, self.shape, self.shape)
+        del img0
         self.mask = Variable(mask.type(self.dtype)).view(-1, 1, self.shape, self.shape)
+        del mask
+
         if ignore is not None:
             self.ignore = Variable(ignore.type(self.dtype)).view(-1, 1, self.shape, self.shape)
+            del ignore
         else:
             self.ignore = None
 
@@ -289,6 +296,7 @@ class train():
 
     def optimize_network(self, dat):
         self.set_input(*dat)
+        del dat
         self.pdt_mask = self.network(self.img0)
         self.optimizer.zero_grad()
         loss = self.backward_network()
