@@ -26,18 +26,18 @@ class train():
                     name='model', 
                     hidden=32, gpu=False, epoch=50, batch_size=16, 
                     lr=0.005, auto_lr_decay=True, lr_decay_patience=4, lr_decay_factor=0.1, 
-                    save_after=1e5, plot_every=10, 
+                    save_after=1e5, plot_every=1e5, 
                     verbose=True, use_tqdm=False, use_tqdm_notebook=False, directory='./'):
         """ 
             Train deepCR-mask model.
 
         Parameters
         ----------
-        image : np.ndarray (N*W*W)
-            Training data: image array with CR.
-        mask : np.ndarray (N*W*W)
-            Training data: CR mask array.
-        ignore : np.ndarray (N*W*W), optional
+        image : np.ndarray (N*W*W) or a list of pathes to the image files
+            Training data: images with CR.
+        mask : np.ndarray (N*W*W) or a list of pathes to the mask files
+            Training data: CR mask.
+        ignore : np.ndarray (N*W*W) or a list of pathes to the ignore files, optional
             Training data: Mask for taking loss. e.g., bad pixel, saturation, etc.
         sky : np.ndarray (N,), optional
             Sky background
@@ -86,20 +86,41 @@ class train():
         None
         """
 
-        # check sky and ignore map
+        # check sky map
         if sky is None and aug_sky != [0, 0]:
             raise AttributeError('Var (sky) is required for sky background augmentation!')
-        if ignore is None:
-            ignore = np.zeros_like(image)
-        assert image.shape == mask.shape == ignore.shape
-        assert image.shape[1] == image.shape[2]
+
+        ## images are provided in numpy array
+        if (type(image) == np.ndarray) and (type(mask) == np.ndarray):
+            # image and mask should match
+            assert image.shape == mask.shape
+            # image should be square
+            assert image.shape[1] == image.shape[2]
+            # save image size info
+            self.shape = image.shape[1]
+        ## images are provided in path list
+        elif (type(image[0]) == str) and (type(mask[0]) == str):
+            # image and mask should match
+            assert len(image) == len(mask)
+            ima_tmp = np.load(image[0])
+            mask_tmp = np.load(mask[0])
+            assert ima_tmp.shape == mask_tmp.shape
+            # image should be square
+            assert ima_tmp.shape[0] == ima_tmp.shape[1]
+            # save image size info
+            self.shape = ima_tmp.shape[0]
+            del ima_tmp, mask_tmp
+        else:
+            raise TypeError('Input image and mask must be numpy data arrays or list of file paths!')
 
         # create torch dataset
         data_train = dataset(image, mask, ignore, sky, part='train', aug_sky=aug_sky)
         data_val = dataset(image, mask, ignore, sky, part='val', aug_sky=aug_sky)
+        del image, mask, ignore, sky
         self.TrainLoader = DataLoader(data_train, batch_size=batch_size, shuffle=True, num_workers=1)
         self.ValLoader = DataLoader(data_val, batch_size=batch_size, shuffle=False, num_workers=1)
-        self.shape = image.shape[1]
+        del data_train, data_val
+
         self.name = name
 
         # use gpu or cpu
@@ -137,7 +158,7 @@ class train():
             self.tqdm = tqdm
         self.disable_tqdm = not (use_tqdm_notebook or use_tqdm)
 
-    def set_input(self, img0, mask, ignore):
+    def set_input(self, img0, mask, ignore=None):
         """
         :param img0: input image
         :param mask: CR mask
@@ -146,7 +167,10 @@ class train():
         """
         self.img0 = Variable(img0.type(self.dtype)).view(-1, 1, self.shape, self.shape)
         self.mask = Variable(mask.type(self.dtype)).view(-1, 1, self.shape, self.shape)
-        self.ignore = Variable(ignore.type(self.dtype)).view(-1, 1, self.shape, self.shape)
+        if ignore is not None:
+            self.ignore = Variable(ignore.type(self.dtype)).view(-1, 1, self.shape, self.shape)
+        else:
+            self.ignore = None
 
     @staticmethod
     def _void_lr_scheduler(self, metric):
@@ -165,7 +189,9 @@ class train():
             self.pdt_mask = self.network(self.img0)
             loss = self.backward_network()
             lmask += float(loss.detach()) * n
+            del loss
             metric += maskMetric(self.pdt_mask.reshape(-1, self.shape, self.shape).detach().cpu().numpy() > 0.5, dat[1].numpy())
+            del dat
         lmask /= count
         TP, TN, FP, FN = metric[0], metric[1], metric[2], metric[3]
         TPR = TP / (TP + FN)
@@ -199,6 +225,7 @@ class train():
         for epoch in self.tqdm(range(epochs), disable=self.disable_tqdm):
             for t, dat in enumerate(self.TrainLoader):
                 self.optimize_network(dat)
+                del dat
             self.epoch_mask += 1
 
             if self.epoch_mask % self.every == 0:
@@ -223,6 +250,7 @@ class train():
         for epoch in self.tqdm(range(epochs), disable=self.disable_tqdm):
             for t, dat in enumerate(self.TrainLoader):
                 self.optimize_network(dat)
+                del dat
             self.epoch_mask += 1
 
             if self.epoch_mask % self.every==0:
@@ -268,7 +296,10 @@ class train():
         self.optimizer.step()
 
     def backward_network(self):
-        loss = self.BCELoss(self.pdt_mask * (1 - self.ignore), self.mask * (1 - self.ignore))
+        if self.ignore is not None:
+            loss = self.BCELoss(self.pdt_mask * (1 - self.ignore), self.mask * (1 - self.ignore))
+        else:
+            loss = self.BCELoss(self.pdt_mask, self.mask)
         return loss
 
     def plot_loss(self):
@@ -300,5 +331,3 @@ class train():
         self.network.load_state_dict(torch.load(self.directory + filename + '.pth'))
         loc = filename.find('epoch') + 5
         self.epoch_mask = int(filename[loc:])
-
-

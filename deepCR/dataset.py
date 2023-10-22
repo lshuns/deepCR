@@ -19,31 +19,82 @@ class dataset(Dataset):
         """
 
         np.random.seed(seed)
-        len = image.shape[0]
+
+        ## images are provided in numpy array
+        if (type(image) == np.ndarray):
+            self.Nima = image.shape[0]
+        ## images are provided in path list
+        else:
+            self.Nima = len(image)
+
+        # split to train and validation sets
         assert f_val < 1 and f_val > 0
         f_train = 1 - f_val
-        if sky is None:
-            sky = np.zeros_like(image)
-        if ignore is None:
-            ignore = np.zeros_like(image)
 
+        # determine sets for train and validation
         if part == 'train':
-            slice = np.s_[:int(len * f_train)]
+            s = np.s_[:int(self.Nima * f_train)]
         elif part == 'val':
-            slice = np.s_[int(len * f_train):]
+            s = np.s_[int(self.Nima * f_train):]
         else:
-            slice = np.s_[0:]
+            s = np.s_[0:]
+        # print(f'>>> Images for {part}: {s}')
 
-        self.image = image[slice]
-        self.mask = mask[slice]
-        self.ignore = ignore[slice]
-        self.sky = sky[slice]
+        # select train or validation sets
+        self.image = image[s]
+        # print('---- selected image', self.image)
+        del image
+        self.mask = mask[s]
+        del mask
 
+        ## update number of images
+        if (type(self.image) == np.ndarray):
+            self.Nima = self.image.shape[0]
+        ## images are provided in path list
+        else:
+            self.Nima = len(self.image)
+        print(f'>>> Number images for {part}: {self.Nima}')
+
+        if ignore is not None:
+            self.ignore = ignore[s]
+            del ignore
+        else:
+            self.ignore = None
+
+        if sky is not None:
+            self.sky = sky[s]
+            del sky
+        else:
+            self.sky = None
+
+        del s
         self.aug_sky = aug_sky
 
     def __len__(self):
-        return self.image.shape[0]
+        return self.Nima
 
     def __getitem__(self, i):
-        a = (self.aug_sky[0] + np.random.rand() * (self.aug_sky[1] - self.aug_sky[0])) * self.sky[i]
-        return self.image[i] + a, self.mask[i], self.ignore[i]
+
+        # get image
+        image = self.image[i]
+        if (type(image) == str):
+            image = np.load(image)
+
+        # get mask
+        mask = self.mask[i]
+        if (type(mask) == str):
+            mask = np.load(mask)
+
+        # add sky
+        if self.sky is not None:
+            image = image + (self.aug_sky[0] + np.random.rand() * (self.aug_sky[1] - self.aug_sky[0])) * self.sky[i]
+
+        # the ignore map
+        if self.ignore is not None:
+            ignore = self.ignore[i]
+            if (type(ignore) == str):
+                ignore = np.load(ignore)
+            return image, mask, ignore
+        else:
+            return image, mask
+        
