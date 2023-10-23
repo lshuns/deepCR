@@ -12,72 +12,107 @@ from joblib import Parallel, delayed
 from joblib import dump, load
 from joblib import wrap_non_picklable_objects
 
-from deepCR.unet import WrappedModel, UNet2Sigmoid
+from deepCR.unet import Unet
 from deepCR.util import medmask
-from learned_models import mask_dict, inpaint_dict, default_model_path
 
 __all__ = ['deepCR']
 
 
 class deepCR():
 
-    def __init__(self, mask='ACS-WFC-F606W-2-32', inpaint=None, device='CPU', hidden=32):
+    def __init__(self, mask_model_path, inpaint_model_path=None, device='CPU', 
+
+                n_channels_mask=1, n_classes_mask=1, hidden_mask=32, 
+                num_downs_mask=1, return_type_mask='sigmoid',
+
+                n_channels_inpaint=1, n_classes_inpaint=1, hidden_inpaint=32, 
+                num_downs_inpaint=1, return_type_inpaint='sigmoid',
+
+                scale=100                
+                ):
 
         """
             Instantiation of deepCR with specified model configurations
 
         Parameters
         ----------
-        mask : str
-            Either name of existing deepCR-mask model, or file path of your own model (incl. '.pth')
-        inpaint : (optional) str
-            Name of existing inpainting model to use. If left as None then by default use a simple 5x5 median mask
-            sampling for inpainting
+        mask_model_path : str
+            The file path to the trained model for mask (incl. '.pth')
+        inpaint_model_path : (optional) str
+            The file path to the trained model for inpaint (incl. '.pth')
         device : str
             One of 'CPU' or 'GPU'
-        hidden : int
-            Number of hidden channel for first deepCR-mask layer. Specify only if using custom deepCR-mask model.
+        n_channels : int, optional 
+            Number of channels for the first convolution layer.
+        n_classes : int, optional 
+            Number of classes for the final convolution layer.
+        hidden : int, optional 
+            Number of hidden layers in the U-Net.
+        num_downs : int, optional 
+            Number of downsampling blocks.
+        return_type : str, optional 
+            What type of values should the U-Net forward process return.
+        scale : float, optional 
+            Scaling the input image as img0/scale.
+
         Returns
         -------
         None
             """
+
         if device == 'GPU':
             self.dtype = torch.cuda.FloatTensor
             self.dint = torch.cuda.ByteTensor
-            wrapper = nn.DataParallel
+
+            # initialise the network
+            self.maskNet = nn.DataParallel(
+                                Unet(n_channels_mask, n_classes_mask, hidden_mask, 
+                                    num_downs_mask, return_type_mask))
+            # load the learned model
+            self.maskNet.load_state_dict(torch.load(mask_model_path))
+
+            # for the inpaint
+            if inpaint_model_path is not None:
+                self.inpaintNet = nn.DataParallel(
+                                Unet(n_channels_inpaint, n_classes_inpaint, hidden_inpaint, 
+                                    num_downs_inpaint, return_type_inpaint))
+                self.inpaintNet.load_state_dict(torch.load(inpaint_model_path))
+
+                self.inpaintNet.eval()
+                for p in self.inpaintNet.parameters():
+                    p.required_grad = False
+            else:
+                self.inpaintNet = None
+
         else:
             self.dtype = torch.FloatTensor
             self.dint = torch.ByteTensor
-            wrapper = WrappedModel
-        if mask in mask_dict.keys():
-            self.scale = mask_dict[mask][2]
-            mask_path = default_model_path + '/mask/' + mask + '.pth'
-            self.maskNet = wrapper(mask_dict[mask][0](*mask_dict[mask][1]))
-        else:
-            self.scale = 1
-            mask_path = mask
-            self.maskNet = wrapper(UNet2Sigmoid(1, 1, hidden))
-        self.maskNet.type(self.dtype)
-        if device != 'GPU':
-            self.maskNet.load_state_dict(torch.load(mask_path, map_location='cpu'))
-        else:
-            self.maskNet.load_state_dict(torch.load(mask_path))
+
+            # initialise the network
+            self.maskNet = Unet(n_channels_mask, n_classes_mask, hidden_mask, 
+                num_downs_mask, return_type_mask)
+
+            # load the learned model
+            self.maskNet.load_state_dict(torch.load(mask_model_path, map_location='cpu'))
+
+            # for the inpaint
+            if inpaint_model_path is not None:
+                self.inpaintNet = Unet(n_channels_inpaint, n_classes_inpaint, hidden_inpaint, 
+                                    num_downs_inpaint, return_type_inpaint)
+                self.inpaintNet.load_state_dict(torch.load(inpaint_model_path, map_location='cpu'))
+
+                self.inpaintNet.eval()
+                for p in self.inpaintNet.parameters():
+                    p.required_grad = False
+            else:
+                self.inpaintNet = None
+
+        # evaluate the parameters
         self.maskNet.eval()
         for p in self.maskNet.parameters():
             p.required_grad = False
 
-        if inpaint is not None:
-            inpaint_path = default_model_path + '/inpaint/' + inpaint + '.pth'
-            self.inpaintNet = wrapper(inpaint_dict[inpaint][0](*inpaint_dict[inpaint][1])).type(self.dtype)
-            if device != 'GPU':
-                self.inpaintNet.load_state_dict(torch.load(inpaint_path, map_location='cpu'))
-            else:
-                self.inpaintNet.load_state_dict(torch.load(inpaint_path))
-            self.inpaintNet.eval()
-            for p in self.inpaintNet.parameters():
-                p.required_grad = False
-        else:
-            self.inpaintNet = None
+        self.scale = scale
 
     def clean(self, img0, threshold=0.5, inpaint=True, binary=True, segment=False,
               patch=256, parallel=False, n_jobs=-1):
