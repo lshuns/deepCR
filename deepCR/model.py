@@ -12,7 +12,7 @@ from joblib import Parallel, delayed
 from joblib import dump, load
 from joblib import wrap_non_picklable_objects
 
-from deepCR.unet import Unet
+from deepCR.unet import UNet
 from deepCR.util import medmask
 
 __all__ = ['deepCR']
@@ -66,7 +66,7 @@ class deepCR():
 
             # initialise the network
             self.maskNet = nn.DataParallel(
-                                Unet(n_channels_mask, n_classes_mask, hidden_mask, 
+                                UNet(n_channels_mask, n_classes_mask, hidden_mask, 
                                     num_downs_mask, return_type_mask))
             # load the learned model
             self.maskNet.load_state_dict(torch.load(mask_model_path))
@@ -74,7 +74,7 @@ class deepCR():
             # for the inpaint
             if inpaint_model_path is not None:
                 self.inpaintNet = nn.DataParallel(
-                                Unet(n_channels_inpaint, n_classes_inpaint, hidden_inpaint, 
+                                UNet(n_channels_inpaint, n_classes_inpaint, hidden_inpaint, 
                                     num_downs_inpaint, return_type_inpaint))
                 self.inpaintNet.load_state_dict(torch.load(inpaint_model_path))
 
@@ -89,7 +89,7 @@ class deepCR():
             self.dint = torch.ByteTensor
 
             # initialise the network
-            self.maskNet = Unet(n_channels_mask, n_classes_mask, hidden_mask, 
+            self.maskNet = UNet(n_channels_mask, n_classes_mask, hidden_mask, 
                 num_downs_mask, return_type_mask)
 
             # load the learned model
@@ -97,7 +97,7 @@ class deepCR():
 
             # for the inpaint
             if inpaint_model_path is not None:
-                self.inpaintNet = Unet(n_channels_inpaint, n_classes_inpaint, hidden_inpaint, 
+                self.inpaintNet = UNet(n_channels_inpaint, n_classes_inpaint, hidden_inpaint, 
                                     num_downs_inpaint, return_type_inpaint)
                 self.inpaintNet.load_state_dict(torch.load(inpaint_model_path, map_location='cpu'))
 

@@ -140,13 +140,13 @@ class train():
             self.dtype = torch.cuda.FloatTensor
             self.dint = torch.cuda.ByteTensor
             self.network = nn.DataParallel(
-                                Unet(n_channels, n_classes, hidden, 
+                                UNet(n_channels, n_classes, hidden, 
                                     num_downs, return_type))
             self.network.type(self.dtype)
         else:
             self.dtype = torch.FloatTensor
             self.dint = torch.ByteTensor
-            self.network = Unet(n_channels, n_classes, hidden, 
+            self.network = UNet(n_channels, n_classes, hidden, 
                 num_downs, return_type)
             self.network.type(self.dtype)
 
