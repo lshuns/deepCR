@@ -1,6 +1,8 @@
 """ module for training new deepCR-mask models
 """
 import os
+import re
+import glob
 import numpy as np
 import datetime
 import matplotlib.pyplot as plt
@@ -223,25 +225,67 @@ class train():
             print('[TPR=%.3f, FPR=%.3f] @threshold = 0.5' % (TPR, FPR))
         return (lmask)
 
-    def train(self):
+    def train(self, resume=False):
         """ call this function to start training network
         :return: None
         """
-        if self.verbose:
-            print('Begin first {} epochs of training'.format(int(self.n_epochs * 0.4 + 0.5)))
-            print('Use batch activate statistics for batch normalization; keep running mean to be used after '
-                  'these epochs')
-            print('')
-        self.train_initial(int(self.n_epochs * 0.4 + 0.5))
 
-        filename = self.save()
-        self.load(filename)
-        self.set_to_eval()
-        if self.verbose:
-            print('Continue onto next {} epochs of training'.format(self.n_epochs - int(self.n_epochs * 0.4 + 0.5)))
-            print('Batch normalization running statistics frozen and used')
-            print('')
-        self.train_continue(self.n_epochs - int(self.n_epochs * 0.4 + 0.5))
+        N_train_initial = int(self.n_epochs * 0.4 + 0.5)
+        N_train_continue = self.n_epochs - N_train_initial
+
+        if resume:
+            # find the last saved model
+            model_file_list = glob.glob(os.path.join(self.directory, '*.pth'))
+            # get epoch number
+            epoch_list = [int(re.search(r'_epoch(\d+).pth', os.path.basename(model_file))[1]) for model_file in model_file_list]
+            # get the last epoch
+            last_epoch = max(epoch_list)
+            max_index = epoch_list.index(last_epoch)
+            del epoch_list
+            # get the last file
+            model_file = model_file_list[max_index]
+            del model_file_list, max_index
+
+            self.epoch_mask = last_epoch
+
+            # load the model
+            self.network.load_state_dict(torch.load(model_file))
+            if self.verbose:
+                print('Resume from {} epochs of training'.format(last_epoch))
+                print('Model loaded from {}'.format(os.path.basename(model_file)))
+
+            if last_epoch < N_train_initial:
+                if self.verbose:
+                    print('Continue with initial training')
+                    print('Use batch activate statistics for batch normalization; keep running mean to be used after '
+                          'these epochs')
+                    print('')
+                self.train_initial(N_train_initial - last_epoch)
+            else:
+                self.set_to_eval()
+                if self.verbose:
+                    print('Continue onto next {} epochs of training'.format(N_train_continue))
+                    print('Batch normalization running statistics frozen and used')
+                    print('')
+                self.train_continue(self.n_epochs - last_epoch)
+
+        else:
+
+            if self.verbose:
+                print('Begin first {} epochs of training'.format(N_train_initial))
+                print('Use batch activate statistics for batch normalization; keep running mean to be used after '
+                      'these epochs')
+                print('')
+            self.train_initial(N_train_initial)
+
+            filename = self.save()
+            self.load(filename)
+            self.set_to_eval()
+            if self.verbose:
+                print('Continue onto next {} epochs of training'.format(N_train_continue))
+                print('Batch normalization running statistics frozen and used')
+                print('')
+            self.train_continue(N_train_continue)
 
     def train_initial(self, epochs):
         self.network.train()
@@ -352,6 +396,6 @@ class train():
         :param filename: (str) filename (without ".pth") to load model state
         :return: None
         """
-        self.network.load_state_dict(torch.load(self.directory + filename + '.pth'))
+        self.network.load_state_dict(torch.load(os.path.join(self.directory, filename + '.pth')))
         loc = filename.find('epoch') + 5
         self.epoch_mask = int(filename[loc:])
