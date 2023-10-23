@@ -1,5 +1,6 @@
 """ module for training new deepCR-mask models
 """
+import os
 import numpy as np
 import datetime
 import matplotlib.pyplot as plt
@@ -343,7 +344,7 @@ class train():
         time = datetime.datetime.now()
         time = str(time)[:10]
         filename = '%s_%s_epoch%d' % (time, self.name, self.epoch_mask)
-        torch.save(self.network.state_dict(), self.directory + filename + '.pth')
+        torch.save(self.network.state_dict(), os.path.join(self.directory, filename + '.pth'))
         return filename
 
     def load(self, filename):
