@@ -15,7 +15,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from deepCR.util import maskMetric
 from deepCR.dataset import dataset
-from deepCR.unet import WrappedModel, UNet2Sigmoid
+from deepCR.unet import UNet
 
 __all__ = 'train'
 
@@ -24,7 +24,8 @@ class train():
     def __init__(self, image, mask, 
                     ignore=None, sky=None, aug_sky=[0, 0], 
                     name='model', 
-                    hidden=32, gpu=False, epoch=50, batch_size=16, 
+                    n_channels=1, n_classes=1, hidden=32, num_downs=1, return_type='sigmoid',
+                    gpu=False, epoch=50, batch_size=1, 
                     lr=0.005, auto_lr_decay=True, lr_decay_patience=4, lr_decay_factor=0.1, 
                     save_after=1e5, plot_every=1e5, 
                     verbose=True, use_tqdm=False, use_tqdm_notebook=False, directory='./'):
@@ -49,8 +50,16 @@ class train():
             training set is discrete and limited.
         name : str, optional 
             Model name, model saved as name_epoch.pth
-        hidden : int, optional 
+        n_channels : int, optional 
             Number of channels for the first convolution layer.
+        n_classes : int, optional 
+            Number of classes for the final convolution layer.
+        hidden : int, optional 
+            Number of hidden layers in the U-Net.
+        num_downs : int, optional 
+            Number of downsampling blocks.
+        return_type : str, optional 
+            What type of values should the U-Net forward process return.
         gpu : bool, optional
             To use GPU or not.
         epoch : int, optional
@@ -117,8 +126,10 @@ class train():
         data_train = dataset(image, mask, ignore, sky, part='train', aug_sky=aug_sky)
         data_val = dataset(image, mask, ignore, sky, part='val', aug_sky=aug_sky)
         del image, mask, ignore, sky
-        self.TrainLoader = DataLoader(data_train, batch_size=batch_size, shuffle=True, num_workers=1)
-        self.ValLoader = DataLoader(data_val, batch_size=batch_size, shuffle=False, num_workers=1)
+
+        # create torch iterator
+        self.TrainLoader = DataLoader(data_train, batch_size=batch_size, shuffle=True, num_workers=0)
+        self.ValLoader = DataLoader(data_val, batch_size=batch_size, shuffle=False, num_workers=0)
         del data_train, data_val
 
         self.name = name
@@ -127,12 +138,15 @@ class train():
         if gpu:
             self.dtype = torch.cuda.FloatTensor
             self.dint = torch.cuda.ByteTensor
-            self.network = nn.DataParallel(UNet2Sigmoid(1,1,hidden))
+            self.network = nn.DataParallel(
+                                Unet(n_channels, n_classes, hidden, 
+                                    num_downs, return_type))
             self.network.type(self.dtype)
         else:
             self.dtype = torch.FloatTensor
             self.dint = torch.ByteTensor
-            self.network = WrappedModel(UNet2Sigmoid(1,1,hidden))
+            self.network = Unet(n_channels, n_classes, hidden, 
+                num_downs, return_type)
             self.network.type(self.dtype)
 
         self.optimizer = optim.Adam(self.network.parameters(), lr=lr)
@@ -199,6 +213,7 @@ class train():
             del loss
             metric += maskMetric(self.pdt_mask.reshape(-1, self.shape, self.shape).detach().cpu().numpy() > 0.5, dat[1].numpy())
             del dat
+
         lmask /= count
         TP, TN, FP, FN = metric[0], metric[1], metric[2], metric[3]
         TPR = TP / (TP + FN)
