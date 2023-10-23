@@ -16,7 +16,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from deepCR.util import maskMetric
 from deepCR.dataset import dataset
-from deepCR.unet import UNet
+from deepCR.unet_ssli import UNet
 
 __all__ = 'train'
 
