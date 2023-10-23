@@ -4,7 +4,7 @@ import torch.nn as nn
 
 class double_conv(nn.Module):
     """
-    A double convolution block
+    A double convolution layers: Batch normalisation and ReLU activation
     """
     def __init__(self, in_ch, out_ch):
         super(type(self), self).__init__()
@@ -43,7 +43,7 @@ class inconv(nn.Module):
 
 class down(nn.Module):
     """
-    The downsampling block
+    The downsampling block (encoding part)
     """
     def __init__(self, in_ch, out_ch):
         super(type(self), self).__init__()
@@ -61,7 +61,7 @@ class down(nn.Module):
 
 class up(nn.Module):
     """
-    The upsampling block
+    The upsampling block (decoding part)
     """
     def __init__(self, in_ch, out_ch):
         super(type(self), self).__init__()
