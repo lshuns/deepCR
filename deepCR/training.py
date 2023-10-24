@@ -167,7 +167,6 @@ class train():
         self.every = plot_every
         self.directory = directory
         self.verbose = verbose
-        self.mode0_complete = False
 
         if use_tqdm_notebook:
             self.tqdm = tqdm_notebook
@@ -182,9 +181,6 @@ class train():
         :param ignore: loss mask
         :return: None
         """
-        if 'self.img0' in locals():
-            del self.img0, self.mask, self.ignore
-
         self.img0 = Variable(img0.type(self.dtype)).view(-1, 1, self.shape, self.shape)
         del img0
         self.mask = Variable(mask.type(self.dtype)).view(-1, 1, self.shape, self.shape)
@@ -209,13 +205,22 @@ class train():
         for i, dat in enumerate(self.ValLoader):
             n = dat[0].shape[0]
             count += n
+
             self.set_input(*dat)
+            del dat
+
             self.pdt_mask = self.network(self.img0)
+            del self.img0
+
             loss = self.backward_network()
+            del self.ignore
+
             lmask += float(loss.detach()) * n
             del loss
-            metric += maskMetric(self.pdt_mask.reshape(-1, self.shape, self.shape).detach().cpu().numpy() > 0.5, dat[1].numpy())
-            del dat
+
+            metric += maskMetric(self.pdt_mask.reshape(-1, self.shape, self.shape).detach().cpu().numpy() > 0.5, 
+                                 self.mask.reshape(-1, self.shape, self.shape).detach().cpu().numpy())
+            del self.pdt_mask, self.mask
 
         lmask /= count
         TP, TN, FP, FN = metric[0], metric[1], metric[2], metric[3]
@@ -305,8 +310,8 @@ class train():
                 del dat
             self.epoch_mask += 1
 
-            if self.epoch_mask % self.every == 0:
-                self.plot_example()
+            # if self.epoch_mask % self.every == 0:
+            #     self.plot_example()
 
             if self.verbose:
                 print('----------- epoch = %d -----------' % (self.epoch_mask))
@@ -330,8 +335,8 @@ class train():
                 del dat
             self.epoch_mask += 1
 
-            if self.epoch_mask % self.every==0:
-                self.plot_example()
+            # if self.epoch_mask % self.every==0:
+            #     self.plot_example()
 
             if self.verbose:
                 print('----------- epoch = %d -----------' % self.epoch_mask)
@@ -348,28 +353,35 @@ class train():
             if self.verbose:
                 print('')
 
-    def plot_example(self):
-        plt.figure(figsize=(10, 30))
-        plt.subplot(131)
-        plt.imshow(np.log(self.img0[0, 0].detach().cpu().numpy()), cmap='gray')
-        plt.title('epoch=%d' % self.epoch_mask)
-        plt.subplot(132)
-        plt.imshow(self.pdt_mask[0, 0].detach().cpu().numpy() > 0.5, cmap='gray')
-        plt.title('prediction > 0.5')
-        plt.subplot(133)
-        plt.imshow(self.mask[0, 0].detach().cpu().numpy(), cmap='gray')
-        plt.title('ground truth')
-        plt.show()
+    # def plot_example(self):
+    #     plt.figure(figsize=(10, 30))
+    #     plt.subplot(131)
+    #     plt.imshow(np.log(self.img0[0, 0].detach().cpu().numpy()), cmap='gray')
+    #     plt.title('epoch=%d' % self.epoch_mask)
+    #     plt.subplot(132)
+    #     plt.imshow(self.pdt_mask[0, 0].detach().cpu().numpy() > 0.5, cmap='gray')
+    #     plt.title('prediction > 0.5')
+    #     plt.subplot(133)
+    #     plt.imshow(self.mask[0, 0].detach().cpu().numpy(), cmap='gray')
+    #     plt.title('ground truth')
+    #     plt.show()
 
     def set_to_eval(self):
         self.network.eval()
 
     def optimize_network(self, dat):
+
         self.set_input(*dat)
         del dat
+
         self.pdt_mask = self.network(self.img0)
+        del self.img0
+
         self.optimizer.zero_grad()
+
         loss = self.backward_network()
+        del self.ignore, self.pdt_mask, self.mask
+
         loss.backward()
         self.optimizer.step()
 
@@ -380,16 +392,16 @@ class train():
             loss = self.BCELoss(self.pdt_mask, self.mask)
         return loss
 
-    def plot_loss(self):
-        """ plot validation loss vs. epoch
-        :return: None
-        """
-        plt.figure(figsize=(10,5))
-        plt.plot(range(self.epoch_mask), self.validation_loss)
-        plt.xlabel('epoch')
-        plt.ylabel('loss')
-        plt.title('Validation loss')
-        plt.show()
+    # def plot_loss(self):
+    #     """ plot validation loss vs. epoch
+    #     :return: None
+    #     """
+    #     plt.figure(figsize=(10,5))
+    #     plt.plot(range(self.epoch_mask), self.validation_loss)
+    #     plt.xlabel('epoch')
+    #     plt.ylabel('loss')
+    #     plt.title('Validation loss')
+    #     plt.show()
 
     def save(self):
         """ save trained network parameters to date_model_name_epoch*.pth
