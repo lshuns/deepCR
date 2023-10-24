@@ -33,7 +33,7 @@ def maskMetric(PD, GT):
         GT = GT.reshape(1, *GT.shape)
     TP, TN, FP, FN = 0, 0, 0, 0
     for i in range(GT.shape[0]):
-        P = GT[i].sum()
+        # P = GT[i].sum()
         TP += (PD[i][GT[i] == 1] == 1).sum()
         TN += (PD[i][GT[i] == 0] == 0).sum()
         FP += (PD[i][GT[i] == 0] == 1).sum()
