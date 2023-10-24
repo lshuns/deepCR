@@ -261,10 +261,20 @@ class train():
                           'these epochs')
                     print('')
                 self.train_initial(N_train_initial - last_epoch)
-            else:
+
+                filename = self.save()
+                self.load(filename)
                 self.set_to_eval()
                 if self.verbose:
                     print('Continue onto next {} epochs of training'.format(N_train_continue))
+                    print('Batch normalization running statistics frozen and used')
+                    print('')
+                self.train_continue(N_train_continue)
+
+            else:
+                self.set_to_eval()
+                if self.verbose:
+                    print('Continue onto next {} epochs of training'.format(self.n_epochs - last_epoch))
                     print('Batch normalization running statistics frozen and used')
                     print('')
                 self.train_continue(self.n_epochs - last_epoch)
