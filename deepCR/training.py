@@ -28,9 +28,8 @@ class train():
                     ignore=None, sky=None, aug_sky=[0, 0], 
                     name='model', 
                     n_channels=1, n_classes=1, hidden=32, num_downs=1, return_type='sigmoid',
-                    gpu=False, epoch=50, batch_size=1, 
+                    gpu=False, epoch_train=20, epoch_evaluate=20, batch_size=1, 
                     lr=0.005, auto_lr_decay=True, lr_decay_patience=4, lr_decay_factor=0.1, 
-                    save_after=1e5, plot_every=1e5, 
                     verbose=True, use_tqdm=False, use_tqdm_notebook=False, directory='./'):
         """ 
             Train deepCR-mask model.
@@ -65,8 +64,10 @@ class train():
             What type of values should the U-Net forward process return.
         gpu : bool, optional
             To use GPU or not.
-        epoch : int, optional
-            Number of epochs to train.
+        epoch_train : int, optional
+            Number of epochs for training mode.
+        epoch_evaluate : int, optional
+            Number of epochs for evaluation mode.
         batch_size : int, optional 
             How many samples per batch to load.
         lr : float, optional
@@ -79,11 +80,6 @@ class train():
             "lr_decay_patience" + 1 epochs.
         lr_decay_factor : float, optional
             Factor by which the learning rate will be reduced. new_lr = lr * factor. 
-        save_after : float, optional
-            Epoch after which trainer automatically saves model state with lowest validation loss.
-        plot_every : float, optional
-            For every "plot_every" epoch, plot mask prediction and ground truth for 1st image in
-            validation set.
         verbose : bool, optional
             Print validation loss and detection rates for every epoch.
         use_tqdm : bool, optional
@@ -161,10 +157,11 @@ class train():
 
         self.BCELoss = nn.BCELoss()
         self.validation_loss = []
+
         self.epoch_mask = 0
-        self.save_after = save_after
-        self.n_epochs = epoch
-        self.every = plot_every
+        self.n_epochs_train = epoch_train
+        self.n_epochs_eva = epoch_evaluate
+
         self.directory = directory
         self.verbose = verbose
 
@@ -235,9 +232,6 @@ class train():
         :return: None
         """
 
-        N_train_initial = int(self.n_epochs * 0.4 + 0.5)
-        N_train_continue = self.n_epochs - N_train_initial
-
         if resume:
             # find the last saved model
             model_file_list = glob.glob(os.path.join(self.directory, '*.pth'))
@@ -256,53 +250,52 @@ class train():
             # load the model
             self.network.load_state_dict(torch.load(model_file))
             if self.verbose:
-                print('Resume from {} epochs of training'.format(last_epoch))
-                print('Model loaded from {}'.format(os.path.basename(model_file)))
+                print('>>> Resume from {} epochs'.format(last_epoch))
+                print('>>> Model loaded from {}'.format(os.path.basename(model_file)))
 
-            if last_epoch < N_train_initial:
+            if last_epoch < self.n_epochs_train:
                 if self.verbose:
-                    print('Continue with initial training')
+                    print('Continue with training mode')
                     print('Use batch activate statistics for batch normalization; keep running mean to be used after '
                           'these epochs')
                     print('')
-                self.train_initial(N_train_initial - last_epoch)
+                self.train_training(self.n_epochs_train - last_epoch)
 
-                filename = self.save()
-                self.load(filename)
-                self.set_to_eval()
+                self.optimizer = optim.Adam(self.network.parameters(), lr=self.lr/2.5)
+
                 if self.verbose:
-                    print('Continue onto next {} epochs of training'.format(N_train_continue))
+                    print('Continue onto next {} epochs for evaluation mode'.format(self.n_epochs_eva))
                     print('Batch normalization running statistics frozen and used')
                     print('')
-                self.train_continue(N_train_continue)
+                self.train_eva(self.n_epochs_eva)
 
             else:
-                self.set_to_eval()
+                self.optimizer = optim.Adam(self.network.parameters(), lr=self.lr/2.5)
+
                 if self.verbose:
-                    print('Continue onto next {} epochs of training'.format(self.n_epochs - last_epoch))
+                    print('Continue onto next {} epochs for evaluation mode'.format(self.n_epochs_eva))
                     print('Batch normalization running statistics frozen and used')
                     print('')
-                self.train_continue(self.n_epochs - last_epoch)
+                self.train_eva(self.n_epochs_eva + self.n_epochs_train - last_epoch)
 
         else:
 
             if self.verbose:
-                print('Begin first {} epochs of training'.format(N_train_initial))
+                print('Begin first {} epochs for training mode'.format(self.n_epochs_train))
                 print('Use batch activate statistics for batch normalization; keep running mean to be used after '
                       'these epochs')
                 print('')
-            self.train_initial(N_train_initial)
+            self.train_training(self.n_epochs_train)
 
-            filename = self.save()
-            self.load(filename)
-            self.set_to_eval()
+            self.optimizer = optim.Adam(self.network.parameters(), lr=self.lr/2.5)
+
             if self.verbose:
-                print('Continue onto next {} epochs of training'.format(N_train_continue))
+                print('Continue onto next {} epochs for evaluation mode'.format(self.n_epochs_eva))
                 print('Batch normalization running statistics frozen and used')
                 print('')
-            self.train_continue(N_train_continue)
+            self.train_eva(self.n_epochs_eva)
 
-    def train_initial(self, epochs):
+    def train_training(self, epochs):
         self.network.train()
         for epoch in self.tqdm(range(epochs), disable=self.disable_tqdm):
             for t, dat in enumerate(self.TrainLoader):
@@ -310,61 +303,44 @@ class train():
                 del dat
             self.epoch_mask += 1
 
-            # if self.epoch_mask % self.every == 0:
-            #     self.plot_example()
-
             if self.verbose:
-                print('----------- epoch = %d -----------' % (self.epoch_mask))
+                print('----------- epoch (training) = %d -----------' % (self.epoch_mask))
             val_loss = self.validate_mask()
             self.validation_loss.append(val_loss)
             if self.verbose:
                 print('loss = %.4f' % (self.validation_loss[-1]))
-            if (np.array(self.validation_loss)[-1] == np.array(
-                    self.validation_loss).min() and self.epoch_mask > self.save_after):
-                filename = self.save()
+            ## only save when the loss is improved
+            if (np.array(self.validation_loss)[-1] == np.array(self.validation_loss).min()):
+                filename = self.save(mode='training')
                 if self.verbose:
                     print('Saved to {}.pth'.format(filename))
             self.lr_scheduler.step(self.validation_loss[-1])
             if self.verbose:
                 print('')
 
-    def train_continue(self, epochs):
+    def train_eva(self, epochs):
+        self.set_to_eval()
+        self.lr_scheduler._reset()
         for epoch in self.tqdm(range(epochs), disable=self.disable_tqdm):
             for t, dat in enumerate(self.TrainLoader):
                 self.optimize_network(dat)
                 del dat
             self.epoch_mask += 1
 
-            # if self.epoch_mask % self.every==0:
-            #     self.plot_example()
-
             if self.verbose:
-                print('----------- epoch = %d -----------' % self.epoch_mask)
+                print('----------- epoch (evaluation) = %d -----------' % self.epoch_mask)
             valLossMask = self.validate_mask()
             self.validation_loss.append(valLossMask)
             if self.verbose:
                 print('loss = %.4f' % (self.validation_loss[-1]))
-            if (np.array(self.validation_loss)[-1] == np.array(
-                    self.validation_loss).min() and self.epoch_mask > self.save_after):
-                filename = self.save()
+            ## only save when the loss is improved
+            if (np.array(self.validation_loss)[-1] == np.array(self.validation_loss).min()):
+                filename = self.save(mode='evaluation')
                 if self.verbose:
                     print('Saved to {}.pth'.format(filename))
             self.lr_scheduler.step(self.validation_loss[-1])
             if self.verbose:
                 print('')
-
-    # def plot_example(self):
-    #     plt.figure(figsize=(10, 30))
-    #     plt.subplot(131)
-    #     plt.imshow(np.log(self.img0[0, 0].detach().cpu().numpy()), cmap='gray')
-    #     plt.title('epoch=%d' % self.epoch_mask)
-    #     plt.subplot(132)
-    #     plt.imshow(self.pdt_mask[0, 0].detach().cpu().numpy() > 0.5, cmap='gray')
-    #     plt.title('prediction > 0.5')
-    #     plt.subplot(133)
-    #     plt.imshow(self.mask[0, 0].detach().cpu().numpy(), cmap='gray')
-    #     plt.title('ground truth')
-    #     plt.show()
 
     def set_to_eval(self):
         self.network.eval()
@@ -392,32 +368,13 @@ class train():
             loss = self.BCELoss(self.pdt_mask, self.mask)
         return loss
 
-    # def plot_loss(self):
-    #     """ plot validation loss vs. epoch
-    #     :return: None
-    #     """
-    #     plt.figure(figsize=(10,5))
-    #     plt.plot(range(self.epoch_mask), self.validation_loss)
-    #     plt.xlabel('epoch')
-    #     plt.ylabel('loss')
-    #     plt.title('Validation loss')
-    #     plt.show()
-
-    def save(self):
+    def save(self, mode=None):
         """ save trained network parameters to date_model_name_epoch*.pth
         :return: None
         """
         time = datetime.datetime.now()
         time = str(time)[:10]
-        filename = '%s_%s_epoch%d' % (time, self.name, self.epoch_mask)
+        filename = f'{time}_{self.name}_{mode}_epoch{self.epoch_mask}'
+
         torch.save(self.network.state_dict(), os.path.join(self.directory, filename + '.pth'))
         return filename
-
-    def load(self, filename):
-        """ Continue training from a previous model state saved to filename
-        :param filename: (str) filename (without ".pth") to load model state
-        :return: None
-        """
-        self.network.load_state_dict(torch.load(os.path.join(self.directory, filename + '.pth')))
-        loc = filename.find('epoch') + 5
-        self.epoch_mask = int(filename[loc:])
