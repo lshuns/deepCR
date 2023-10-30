@@ -30,7 +30,7 @@ class deepCR():
                 n_channels_inpaint=1, n_classes_inpaint=1, hidden_inpaint=32, 
                 num_downs_inpaint=1, return_type_inpaint='sigmoid',
 
-                scale=100, 
+                scale=1, 
                 model_from='ssli', mask=None, inpaint=None
                 ):
 
