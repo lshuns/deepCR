@@ -6,8 +6,8 @@ import glob
 import numpy as np
 import datetime
 import matplotlib.pyplot as plt
-from tqdm import tqdm as tqdm
-from tqdm import tqdm_notebook as tqdm_notebook
+from tqdm import tqdm
+from tqdm import tqdm_notebook
 
 import torch
 import torch.nn as nn
@@ -128,12 +128,15 @@ class train():
 
         # create torch iterator
         self.TrainLoader = DataLoader(data_train, batch_size=batch_size, shuffle=True, num_workers=0)
+        self.Ntrain = len(self.TrainLoader.dataset)
+        print(f'>>> Number images for training: {self.Ntrain}')
         self.ValLoader = DataLoader(data_val, batch_size=batch_size, shuffle=False, num_workers=0)
+        print(f'>>> Number images for validation: {len(self.ValLoader.dataset)}')
         del data_train, data_val
 
         self.name = name
 
-        # use gpu or cpu
+        # initialise the network
         if gpu:
             self.dtype = torch.cuda.FloatTensor
             self.dint = torch.cuda.ByteTensor
@@ -148,15 +151,21 @@ class train():
                 num_downs, return_type)
             self.network.type(self.dtype)
 
+        # initialise the optimizer
         self.optimizer = optim.Adam(self.network.parameters(), lr=lr)
+
+        # initialise the scheduler
         if auto_lr_decay:
             self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=lr_decay_factor, patience=lr_decay_patience,
                                                   cooldown=2, verbose=True, threshold=0.005)
         else:
             self.lr_scheduler = self._void_lr_scheduler
 
-        self.BCELoss = nn.BCELoss()
+        # initialise the loss function
+        self.loss_fn = nn.BCELoss()
+
         self.validation_loss = []
+        self.lr = lr
 
         self.epoch_mask = 0
         self.n_epochs_train = epoch_train
@@ -164,8 +173,6 @@ class train():
 
         self.directory = directory
         self.verbose = verbose
-
-        self.lr = lr
 
         if use_tqdm_notebook:
             self.tqdm = tqdm_notebook
@@ -199,34 +206,46 @@ class train():
         """
         :return: validation loss. print TPR and FPR at threshold = 0.5.
         """
+
+        # for evaluation
+        self.network.eval()
+
         lmask = 0; count = 0
         metric = np.zeros(4)
-        for i, dat in enumerate(self.ValLoader):
-            n = dat[0].shape[0]
-            count += n
+        # to reduce unnecessary gradient computations
+        with torch.no_grad():
+            for i, dat in enumerate(self.ValLoader):
+                n = dat[0].shape[0]
+                count += n
 
-            self.set_input(*dat)
-            del dat
+                # prepare the data
+                self.set_input(*dat)
+                del dat
+                # make prediction
+                pdt_mask = self.network(self.img0)
+                del self.img0
+                # compute loss
+                if self.ignore is not None:
+                    loss = self.loss_fn(pdt_mask * (1 - self.ignore), self.mask * (1 - self.ignore))
+                else:
+                    loss = self.loss_fn(pdt_mask, self.mask)
+                del self.ignore
+                # sum up loss
+                lmask += float(loss.detach()) * n
+                del loss
 
-            self.pdt_mask = self.network(self.img0)
-            del self.img0
+                # calculate matrix
+                metric += maskMetric(pdt_mask.reshape(-1, self.shape, self.shape).detach().cpu().numpy() > 0.5, 
+                                     self.mask.reshape(-1, self.shape, self.shape).detach().cpu().numpy())
+                del pdt_mask, self.mask
 
-            loss = self.backward_network()
-            del self.ignore
+            lmask /= count
+            TP, TN, FP, FN = metric[0], metric[1], metric[2], metric[3]
+            TPR = TP / (TP + FN)
+            FPR = FP / (FP + TN)
 
-            lmask += float(loss.detach()) * n
-            del loss
-
-            metric += maskMetric(self.pdt_mask.reshape(-1, self.shape, self.shape).detach().cpu().numpy() > 0.5, 
-                                 self.mask.reshape(-1, self.shape, self.shape).detach().cpu().numpy())
-            del self.pdt_mask, self.mask
-
-        lmask /= count
-        TP, TN, FP, FN = metric[0], metric[1], metric[2], metric[3]
-        TPR = TP / (TP + FN)
-        FPR = FP / (FP + TN)
         if self.verbose:
-            print('[TPR=%.3f, FPR=%.3f] @threshold = 0.5' % (TPR, FPR))
+            print('validation [TPR=%.3f, FPR=%.3f] @threshold = 0.5' % (TPR, FPR))
         return (lmask)
 
     def train(self, resume=False):
@@ -235,148 +254,150 @@ class train():
         """
 
         if resume:
-            # find the last saved model
-            model_file_list = glob.glob(os.path.join(self.directory, '*.pth'))
-            # get epoch number
-            epoch_list = [int(re.search(r'_epoch(\d+).pth', os.path.basename(model_file))[1]) for model_file in model_file_list]
-            # get the last epoch
-            last_epoch = max(epoch_list)
-            max_index = epoch_list.index(last_epoch)
-            del epoch_list
-            # get the last file
-            model_file = model_file_list[max_index]
-            del model_file_list, max_index
-
-            self.epoch_mask = last_epoch
-
-            # load the model
-            self.network.load_state_dict(torch.load(model_file))
-            if self.verbose:
-                print('>>> Resume from {} epochs'.format(last_epoch))
-                print('>>> Model loaded from {}'.format(os.path.basename(model_file)))
-
-            if last_epoch < self.n_epochs_train:
-                if self.verbose:
-                    print('Continue with training mode')
-                    print('Use batch activate statistics for batch normalization; keep running mean to be used after '
-                          'these epochs')
-                    print('')
-                self.train_training(self.n_epochs_train - last_epoch)
-
-                self.optimizer = optim.Adam(self.network.parameters(), lr=self.lr/2.5)
-
-                if self.verbose:
-                    print('Continue onto next {} epochs for evaluation mode'.format(self.n_epochs_eva))
-                    print('Batch normalization running statistics frozen and used')
-                    print('')
-                self.train_eva(self.n_epochs_eva)
-
+            # find the checkpoint
+            checkpoint_list = glob.glob(os.path.join(self.directory, '*.checkpoint'))
+            if len(checkpoint_list) > 1:
+                print('XXX found more than one checkpoint, using the one with larger epoch ID...')
+                # get epoch number
+                epoch_list = [int(re.search(r'_epoch(\d+).checkpoint', os.path.basename(checkpoint_file))[1]) for checkpoint_file in checkpoint_list]
+                # get the last epoch
+                max_index = epoch_list.index(max(epoch_list))
+                del epoch_list
+                # get the last file
+                checkpoint_file = checkpoint_list[max_index]
+                del checkpoint_list, max_index
             else:
-                self.optimizer = optim.Adam(self.network.parameters(), lr=self.lr/2.5)
+                checkpoint_file = checkpoint_list[0]
+                del checkpoint_list
 
-                if self.verbose:
-                    print('Continue onto next {} epochs for evaluation mode'.format(self.n_epochs_eva))
-                    print('Batch normalization running statistics frozen and used')
-                    print('')
-                self.train_eva(self.n_epochs_eva + self.n_epochs_train - last_epoch)
+            # load the checkpoint
+            checkpoint = torch.load(checkpoint_file)
+            self.epoch_mask = checkpoint['epoch'] + 1
+            self.network.load_state_dict(checkpoint['model_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            self.lr_scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            self.validation_loss = checkpoint['validation_loss']
+            del checkpoint
+            if self.verbose:
+                print('>>> Resume for {} epoch'.format(self.epoch_mask))
+                print('>>> Checkpoint loaded from {}'.format(os.path.basename(checkpoint_file)))
+
+            if self.epoch_mask < self.n_epochs_train:
+                self._train(self.n_epochs_train - self.epoch_mask, mode='training')
+                self._train(self.n_epochs_eva, mode='evaluation')
+            else:
+                self._train(self.n_epochs_eva + self.n_epochs_train - self.epoch_mask, mode='evaluation')
 
         else:
-
             if self.verbose:
                 print('Begin first {} epochs for training mode'.format(self.n_epochs_train))
                 print('Use batch activate statistics for batch normalization; keep running mean to be used after '
                       'these epochs')
                 print('')
-            self.train_training(self.n_epochs_train)
-
-            self.optimizer = optim.Adam(self.network.parameters(), lr=self.lr/2.5)
+            self._train(self.n_epochs_train, mode='training')
 
             if self.verbose:
                 print('Continue onto next {} epochs for evaluation mode'.format(self.n_epochs_eva))
                 print('Batch normalization running statistics frozen and used')
                 print('')
-            self.train_eva(self.n_epochs_eva)
+            self._train(self.n_epochs_eva, mode='evaluation')
 
-    def train_training(self, epochs):
-        self.network.train()
+    def _train(self, epochs, mode='training'):
+
+        # training or evaluation mode
+        if mode == 'training':
+            self.network.train()
+        elif mode == 'evaluation':
+            self.network.eval()
+        else:
+            raise Exception(f"Unknown mode {mode}!")
+
+        # loop over all epochs and train
         for epoch in self.tqdm(range(epochs), disable=self.disable_tqdm):
-            for t, dat in enumerate(self.TrainLoader):
-                self.optimize_network(dat)
-                del dat
-            self.epoch_mask += 1
 
+            # running information
             if self.verbose:
-                print('----------- epoch (training) = %d -----------' % (self.epoch_mask))
+                print(f'>>>>>>>>> start epoch ({mode}) {self.epoch_mask} ---------')
+
+            # loop over all images and train for each epoch
+            for t, dat in enumerate(self.TrainLoader):
+
+                # get the image data
+                self.set_input(*dat)
+                del dat
+                # predict the mask
+                pdt_mask = self.network(self.img0)
+                del self.img0
+                # compute the loss
+                if self.ignore is not None:
+                    loss = self.loss_fn(pdt_mask * (1 - self.ignore), self.mask * (1 - self.ignore))
+                else:
+                    loss = self.loss_fn(pdt_mask, self.mask)
+                del self.ignore, pdt_mask, self.mask
+                # backpropagation
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+
+                # running information
+                if (self.verbose) and (t % 10 == 0):
+                    print(f'++++++ loss: {loss.item():>7f} [{t:>5d}/{self.Ntrain:>5d}]')
+
+            # collect the validation loss for each finished epoch
             val_loss = self.validate_mask()
             self.validation_loss.append(val_loss)
-            if self.verbose:
-                print('loss = %.4f' % (self.validation_loss[-1]))
-            ## only save when the loss is improved
-            if (np.array(self.validation_loss)[-1] == np.array(self.validation_loss).min()):
-                filename = self.save(mode='training')
-                if self.verbose:
-                    print('Saved to {}.pth'.format(filename))
-            self.lr_scheduler.step(self.validation_loss[-1])
-            if self.verbose:
-                print('')
 
-    def train_eva(self, epochs):
-        self.set_to_eval()
-        self.lr_scheduler._reset()
-        for epoch in self.tqdm(range(epochs), disable=self.disable_tqdm):
-            for t, dat in enumerate(self.TrainLoader):
-                self.optimize_network(dat)
-                del dat
+            # Decay the learning rate is needed
+            self.lr_scheduler.step(self.validation_loss[-1])
+
+            # running information
+            if self.verbose:
+                print('validation loss = %.4f' % (self.validation_loss[-1]))
+
+            ## save the model if the loss is improved
+            if (np.array(self.validation_loss)[-1] == np.array(self.validation_loss).min()):
+                filename = self._save(mode=mode)
+                if self.verbose:
+                    print('Model saved to {}.pth'.format(filename))
+
+            # save the checkpoint
+            filename = self._save(mode='checkpoint')
+            if self.verbose:
+                print('Checkpoint saved to {}.checkpoint'.format(filename))
+
+            # running information
+            if self.verbose:
+                print(f'--------- finished epoch ({mode}) {self.epoch_mask} <<<<<<<<<')
+
+            # record the number of finished epoches
             self.epoch_mask += 1
 
-            if self.verbose:
-                print('----------- epoch (evaluation) = %d -----------' % self.epoch_mask)
-            valLossMask = self.validate_mask()
-            self.validation_loss.append(valLossMask)
-            if self.verbose:
-                print('loss = %.4f' % (self.validation_loss[-1]))
-            ## only save when the loss is improved
-            if (np.array(self.validation_loss)[-1] == np.array(self.validation_loss).min()):
-                filename = self.save(mode='evaluation')
-                if self.verbose:
-                    print('Saved to {}.pth'.format(filename))
-            self.lr_scheduler.step(self.validation_loss[-1])
-            if self.verbose:
-                print('')
+    def _save(self, mode=None):
 
-    def set_to_eval(self):
-        self.network.eval()
-
-    def optimize_network(self, dat):
-
-        self.set_input(*dat)
-        del dat
-
-        self.pdt_mask = self.network(self.img0)
-        del self.img0
-
-        self.optimizer.zero_grad()
-
-        loss = self.backward_network()
-        del self.ignore, self.pdt_mask, self.mask
-
-        loss.backward()
-        self.optimizer.step()
-
-    def backward_network(self):
-        if self.ignore is not None:
-            loss = self.BCELoss(self.pdt_mask * (1 - self.ignore), self.mask * (1 - self.ignore))
-        else:
-            loss = self.BCELoss(self.pdt_mask, self.mask)
-        return loss
-
-    def save(self, mode=None):
-        """ save trained network parameters to date_model_name_epoch*.pth
-        :return: None
-        """
+        # time saved in the filename
         time = datetime.datetime.now()
         time = str(time)[:10]
-        filename = f'{time}_{self.name}_{mode}_epoch{self.epoch_mask}'
 
-        torch.save(self.network.state_dict(), os.path.join(self.directory, filename + '.pth'))
+        if mode != 'checkpoint':
+            # saving model
+            filename = f'{time}_{self.name}_{mode}_epoch{self.epoch_mask}'
+            torch.save(self.network.state_dict(), os.path.join(self.directory, filename + '.pth'))
+        else:
+            # saving checkpoint
+            filename = f'{time}_{self.name}_epoch{self.epoch_mask}'
+            torch.save({
+                        'epoch': self.epoch_mask,
+                        'model_state_dict': self.network.state_dict(),
+                        'optimizer_state_dict': self.optimizer.state_dict(),
+                        'scheduler_state_dict': self.lr_scheduler.state_dict(),
+                        'validation_loss': self.validation_loss
+                        },
+                        os.path.join(self.directory, filename + '.checkpoint'))
+
+            # remove previous checkpoint
+            file_list = glob.glob(os.path.join(self.directory, '*.checkpoint'))
+            for file in file_list:
+                if file != os.path.join(self.directory, filename + '.checkpoint'):
+                    os.remove(file)
+
         return filename

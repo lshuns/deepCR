@@ -53,7 +53,6 @@ class dataset(Dataset):
         ## images are provided in path list
         else:
             self.Nima = len(self.image)
-        print(f'>>> Number images for {part}: {self.Nima}')
 
         if ignore is not None:
             self.ignore = ignore[s]
