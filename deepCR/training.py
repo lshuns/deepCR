@@ -30,7 +30,7 @@ class train():
                     n_channels=1, n_classes=1, hidden=32, num_downs=1, return_type='sigmoid',
                     gpu=False, epoch_train=20, epoch_evaluate=20, batch_size=1, 
                     lr=0.005, auto_lr_decay=True, lr_decay_patience=4, lr_decay_factor=0.1, 
-                    verbose=True, use_tqdm=False, use_tqdm_notebook=False, directory='./'):
+                    verbose=True, use_tqdm=True, use_tqdm_notebook=False, directory='./'):
         """ 
             Train deepCR-mask model.
 
@@ -164,6 +164,8 @@ class train():
 
         self.directory = directory
         self.verbose = verbose
+
+        self.lr = lr
 
         if use_tqdm_notebook:
             self.tqdm = tqdm_notebook
