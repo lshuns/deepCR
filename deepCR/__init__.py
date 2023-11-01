@@ -10,9 +10,9 @@ See https://github.com/profjsb/deepCR
 
 """
 from deepCR.model import deepCR
-from deepCR.training import train
-from deepCR.evaluate import roc
+from deepCR.model_ssli import deepECR
+from deepCR.training import train_mask
 
-__all__ = ["deepCR", "train", "roc"]
+__all__ = ["deepECR", "deepCR", "train_mask"]
 
 __version__ = '0.1.5'
