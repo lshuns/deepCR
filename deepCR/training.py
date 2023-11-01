@@ -27,7 +27,8 @@ class train():
     def __init__(self, image, mask, 
                     ignore=None, sky=None, aug_sky=[0, 0], 
                     name='model', 
-                    n_channels=1, n_classes=1, hidden=32, num_downs=1, return_type='sigmoid',
+                    nChannel_in=1, nChannel_out=1, nChannel_hidden=32, 
+                    nLayers_down=1, return_type='sigmoid',
                     gpu=False, epoch_train=20, epoch_evaluate=20, batch_size=1, 
                     lr=0.005, auto_lr_decay=True, lr_decay_patience=4, lr_decay_factor=0.1, 
                     verbose=True, use_tqdm=True, use_tqdm_notebook=False, directory='./'):
@@ -52,14 +53,14 @@ class train():
             training set is discrete and limited.
         name : str, optional 
             Model name, model saved as name_epoch.pth
-        n_channels : int, optional 
-            Number of channels for the first convolution layer.
-        n_classes : int, optional 
-            Number of classes for the final convolution layer.
-        hidden : int, optional 
-            Number of hidden layers in the U-Net.
-        num_downs : int, optional 
-            Number of downsampling blocks.
+        nChannel_in : int, optional 
+            Number of channels in the input (1 for mask, 2 for inpaint).
+        nChannel_out : int, optional 
+            Number of channels in the output (always 1)
+        nChannel_hidden : int, optional 
+            Number of hidden channels for each convolution.
+        nLayers_down : int, optional 
+            Number of downsampling layers.
         return_type : str, optional 
             What type of values should the U-Net forward process return.
         gpu : bool, optional
@@ -141,14 +142,14 @@ class train():
             self.dtype = torch.cuda.FloatTensor
             self.dint = torch.cuda.ByteTensor
             self.network = nn.DataParallel(
-                                UNet(n_channels, n_classes, hidden, 
-                                    num_downs, return_type))
+                                UNet(nChannel_in, nChannel_out, nChannel_hidden, 
+                                    nLayers_down, return_type))
             self.network.type(self.dtype)
         else:
             self.dtype = torch.FloatTensor
             self.dint = torch.ByteTensor
-            self.network = UNet(n_channels, n_classes, hidden, 
-                num_downs, return_type)
+            self.network = UNet(nChannel_in, nChannel_out, nChannel_hidden, 
+                                nLayers_down, return_type)
             self.network.type(self.dtype)
 
         # initialise the optimizer
