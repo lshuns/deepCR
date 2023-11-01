@@ -5,17 +5,17 @@ class UNet(nn.Module):
     """
     The UNet architecture
     """
-    def __init__(self, n_channels, n_classes, hidden=32, 
-                num_downs=1, return_type='sigmoid'):
+    def __init__(self, nChannel_in, nChannel_out, nChannel_hidden=32, 
+                nLayers_down=1, return_type='sigmoid'):
         super(type(self), self).__init__()
         # Initial convolution block
-        self.inc = inconv(n_channels, hidden)  
+        self.inc = inconv(nChannel_in, nChannel_hidden)  
         # List of downsampling blocks
-        self.downs = nn.ModuleList([down(hidden * 2**i, hidden * 2**(i+1)) for i in range(num_downs)])
+        self.downs = nn.ModuleList([down(nChannel_hidden * 2**i, nChannel_hidden * 2**(i+1)) for i in range(nLayers_down)])
         # List of upsampling blocks
-        self.ups = nn.ModuleList([up(hidden * 2**(i+1), hidden * 2**i) for i in range(num_downs)])  
+        self.ups = nn.ModuleList([up(nChannel_hidden * 2**(i+1), nChannel_hidden * 2**i) for i in range(nLayers_down)])  
         # Final convolution block
-        self.outc = outconv(hidden, n_classes)  
+        self.outc = outconv(nChannel_hidden, nChannel_out)  
 
         # what to return
         self.return_type = return_type
