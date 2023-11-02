@@ -182,6 +182,7 @@ class train_mask():
         self.n_epochs_eva = epoch_evaluate
 
         self.directory = directory
+        print(f">>> Outputs will be saved to {self.directory}")
 
         if use_tqdm_notebook:
             self.tqdm = tqdm_notebook
@@ -399,7 +400,7 @@ class train_mask():
                         os.path.join(self.directory, filename + '.checkpoint'))
 
             # remove previous checkpoint
-            file_list = glob.glob(os.path.join(self.directory, '*.checkpoint'))
+            file_list = glob.glob(os.path.join(self.directory, f'*_{self.name}_*.checkpoint'))
             for file in file_list:
                 if file != os.path.join(self.directory, filename + '.checkpoint'):
                     os.remove(file)
