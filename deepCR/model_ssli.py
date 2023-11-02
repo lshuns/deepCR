@@ -14,11 +14,7 @@ __all__ = ['deepECR']
 class deepECR():
 
     def __init__(self, mask_model_path, 
-                mask_nChannel_in=1, mask_nChannel_out=1, mask_nChannel_hidden=32, 
-                mask_nLayers_down=1, mask_return_type='sigmoid',
                 inpaint_model_path=None,
-                inpaint_nChannel_in=2, inpaint_nChannel_out=1, inpaint_nChannel_hidden=32, 
-                inpaint_nLayers_down=2, inpaint_return_type='ori',
                 gpu=False, scale=1):
 
         """
@@ -40,35 +36,49 @@ class deepECR():
         None
             """
 
+        ## determine which device to use
         if gpu:
             self.device = "cuda"
+            self.dtype = torch.cuda.FloatTensor
         else:
             self.device = "cpu"
+            self.dtype = torch.FloatTensor
         print(f">>> Using {self.device} for training")
 
-        # load the learned model
-        state_dict = torch.load(mask_model_path, map_location=self.device)
+        # >>>>> the mask model
+        # load the learned model information
+        model_info = torch.load(mask_model_path, map_location=self.device)
+        ## the model configuration
+        nChannel_in, nChannel_out, nChannel_hidden, nLayers_down, return_type = model_info['network_config']
+        ## the model states
+        state_dict = model_info['model_state_dict']
+        del model_info
         # initialise the network
-        self.maskNet = UNet(mask_nChannel_in, mask_nChannel_out, mask_nChannel_hidden, 
-                            mask_nLayers_down, mask_return_type).to(self.device)
-        # set states
+        self.maskNet = UNet(nChannel_in, nChannel_out, nChannel_hidden, 
+                            nLayers_down, return_type).to(self.device)
+        ## set states
         self.maskNet.load_state_dict(state_dict)
         del state_dict
-        # evaluation mode
+        # to evaluation mode
         self.maskNet.eval()
 
-        # for the inpaint
+        # >>>>> the inpaint model
         if inpaint_model_path is not None:
-            # load the learned model
-            state_dict = torch.load(inpaint_model_path, map_location=self.device)
+            # load the learned model information
+            model_info = torch.load(inpaint_model_path, map_location=self.device)
+            ## the model configuration
+            nChannel_in, nChannel_out, nChannel_hidden, nLayers_down, return_type = model_info['network_config']
+            ## the model states
+            state_dict = model_info['model_state_dict']
+            del model_info
             # initialise the network
-            self.inpaintNet = UNet(inpaint_nChannel_in, inpaint_nChannel_out, inpaint_nChannel_hidden, 
-                                inpaint_nLayers_down, inpaint_return_type).to(self.device)
-            # set states
+            self.inpaintNet = UNet(nChannel_in, nChannel_out, nChannel_hidden, 
+                                nLayers_down, return_type).to(self.device)
+            ## set states
             self.inpaintNet.load_state_dict(state_dict)
-            # evaluation mode
+            del state_dict
+            # to evaluation mode
             self.inpaintNet.eval()
-
         else:
             self.inpaintNet = None
 
@@ -88,7 +98,7 @@ class deepECR():
         with torch.no_grad():
 
             # to Tensor
-            img0 = from_numpy(np.expand_dims(img0 / self.scale, axis=(0, 1))).to(self.device)
+            img0 = from_numpy(np.expand_dims(img0 / self.scale, axis=(0, 1))).to(self.device).type(self.dtype)
             # make prediction
             mask = self.maskNet(img0)
             # back to numpy array
@@ -113,8 +123,8 @@ class deepECR():
             with torch.no_grad():
     
                 # to Tensor
-                img0 = from_numpy(np.expand_dims(img0 / self.scale, axis=(0, 1))).to(self.device)
-                mask = from_numpy(np.expand_dims(mask, axis=(0, 1))).to(self.device)
+                img0 = from_numpy(np.expand_dims(img0 / self.scale, axis=(0, 1))).to(self.device).type(self.dtype)
+                mask = from_numpy(np.expand_dims(mask, axis=(0, 1))).to(self.device).type(self.dtype)
                 cat = torch.cat((img0 * (1 - mask), mask), dim=1)
 
                 # make prediction
