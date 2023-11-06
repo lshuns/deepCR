@@ -43,7 +43,7 @@ class deepECR():
         else:
             self.device = "cpu"
             self.dtype = torch.FloatTensor
-        print(f">>> Using {self.device} for training")
+        print(f">>> Using {self.device} for prediction")
 
         # >>>>> the mask model
         # load the learned model information
