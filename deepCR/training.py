@@ -3,9 +3,8 @@
 import os
 import re
 import glob
-import numpy as np
 import datetime
-import matplotlib.pyplot as plt
+import numpy as np
 from tqdm import tqdm
 from tqdm import tqdm_notebook
 
@@ -33,8 +32,9 @@ class train_mask():
                     nChannel_in=1, nChannel_out=1, nChannel_hidden=32, 
                     nLayers_down=1, return_type='sigmoid',
                     gpu=False, epoch_train=20, epoch_evaluate=20, batch_size=1, 
-                    lr=0.005, auto_lr_decay=True, lr_decay_patience=4, lr_decay_factor=0.1, 
-                    use_tqdm=True, use_tqdm_notebook=False, directory='./'):
+                    lr=5e-3, auto_lr_decay=True, lr_decay_patience=4, lr_decay_factor=0.1, stop_lr=5e-6,
+                    use_tqdm=True, use_tqdm_notebook=False, directory='./',
+                    max_cores=1):
         """ 
             Train deepCR-mask model.
 
@@ -96,12 +96,16 @@ class train_mask():
             "lr_decay_patience" + 1 epochs.
         lr_decay_factor : float, optional
             Factor by which the learning rate will be reduced. new_lr = lr * factor. 
+        stop_lr : float, optional
+            When learning rate decreased to stop_lr, the training will stop. 
         use_tqdm : bool, optional
             Whether to show tqdm progress bar.
         use_tqdm_notebook : bool, optional
             Whether to use jupyter notebook version of tqdm. Overwrites tqdm_default.
         directory : str, optional
             Directory to save trained model.
+        max_cores : int, optional
+            Maximum number of cores for parallel calculation
 
         Returns
         -------
@@ -175,7 +179,13 @@ class train_mask():
         # initialise the loss function
         self.loss_fn = nn.BCELoss()
 
+        # make sure the maximum number of cores used is reasonable
+        torch.set_num_threads(max_cores)
+        print(f'>>> Maximum allowed cores: {max_cores}')
+
         self.validation_loss = []
+        self.init_lr = lr
+        self.stop_lr = stop_lr
 
         self.epoch_mask = 0
         self.n_epochs_train = epoch_train
@@ -283,20 +293,33 @@ class train_mask():
             print('XXX Checkpoint loaded from {}'.format(os.path.basename(checkpoint_file)))
 
             if self.epoch_mask < self.n_epochs_train:
+                # training mode
                 self._train(self.n_epochs_train - self.epoch_mask, mode='training')
+
+                # reset the lr and scheduler for the new mode
+                self.lr_scheduler._reset()
+                self.optimizer = optim.Adam(self.network.parameters(), lr=self.init_lr)
+
+                # evaluation mode
                 self._train(self.n_epochs_eva, mode='evaluation')
+
             else:
+                # evaluation mode
                 self._train(self.n_epochs_eva + self.n_epochs_train - self.epoch_mask, mode='evaluation')
 
         else:
             print('Begin first {} epochs for training mode'.format(self.n_epochs_train))
-            print('Use batch activate statistics for batch normalization; keep running mean to be used after '
-                  'these epochs')
+            print('(Use batch activate statistics for batch normalization; keep running mean to be used after '
+                  'these epochs)')
             print('')
             self._train(self.n_epochs_train, mode='training')
 
+            # reset the lr and scheduler for the new mode
+            self.lr_scheduler._reset()
+            self.optimizer = optim.Adam(self.network.parameters(), lr=self.init_lr)
+
             print('Continue onto next {} epochs for evaluation mode'.format(self.n_epochs_eva))
-            print('Batch normalization running statistics frozen and used')
+            print('(Batch normalization running statistics frozen and used)')
             print('')
             self._train(self.n_epochs_eva, mode='evaluation')
 
@@ -358,17 +381,23 @@ class train_mask():
             # Decay the learning rate if needed
             self.lr_scheduler.step(self.validation_loss[-1])
 
-            ## save the model if the loss is improved
+            ## save the model if the validation loss is improved
             if (np.array(self.validation_loss)[-1] == np.array(self.validation_loss).min()):
                 filename = self._save(mode=mode)
-                print('Model saved to {}.pth'.format(filename))
+                print(f'Model saved to {filename}.pth')
 
             # save the checkpoint
             filename = self._save(mode='checkpoint')
-            print('Checkpoint saved to {}.checkpoint'.format(filename))
+            print(f'Checkpoint saved to {filename}.checkpoint')
 
             # running information
             print(f'--------- finished epoch ({mode}) {self.epoch_mask} <<<<<<<<<')
+
+            # early stop if the lr is too low
+            current_lr = [group['lr'] for group in self.optimizer.param_groups][0]
+            if current_lr <= self.stop_lr:
+                print(f'xxxxxxxxx stop {mode} because of convergence xxxxxxxxx')
+                break
 
             # record the number of finished epoches
             self.epoch_mask += 1
