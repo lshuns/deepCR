@@ -15,4 +15,4 @@ from deepCR.training import train_mask
 
 __all__ = ["deepECR", "deepCR", "train_mask"]
 
-__version__ = 'L0.1.0'
+__version__ = '0.2.0.1'
