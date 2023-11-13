@@ -29,7 +29,7 @@ class UNet(nn.Module):
             downs.append(x)
             del x
         x = downs.pop()
-        for up_layer, down_tensor in zip(self.ups, reversed(downs)):
+        for up_layer, down_tensor in zip(reversed(self.ups), reversed(downs)):
             x = up_layer(x, down_tensor)
             del down_tensor
         x = self.outc(x)
