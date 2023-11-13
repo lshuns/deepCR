@@ -11,8 +11,8 @@ See https://github.com/profjsb/deepCR
 """
 from deepCR.model import deepCR
 from deepCR.model_ssli import deepECR
-from deepCR.training import train_mask
+from deepCR.training import train_mask, train_inpaint
 
-__all__ = ["deepECR", "deepCR", "train_mask"]
+__all__ = ["deepECR", "deepCR", "train_mask", "train_inpaint"]
 
-__version__ = '0.2.0.1'
+__version__ = '0.2.0.2'
