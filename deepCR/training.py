@@ -171,6 +171,8 @@ class train_mask():
 
         # initialise the scheduler
         if auto_lr_decay:
+            self.lr_decay_factor = lr_decay_factor
+            self.lr_decay_patience = lr_decay_patience
             self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=lr_decay_factor, patience=lr_decay_patience,
                                                   cooldown=2, verbose=True, threshold=0.005)
         else:
@@ -297,8 +299,13 @@ class train_mask():
                 self._train(self.n_epochs_train - self.epoch_mask, mode='training')
 
                 # reset the lr and scheduler for the new mode
-                self.lr_scheduler._reset()
                 self.optimizer = optim.Adam(self.network.parameters(), lr=self.init_lr)
+                if auto_lr_decay:
+                    self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=self.lr_decay_factor, 
+                                                            patience=self.lr_decay_patience,
+                                                              cooldown=2, verbose=True, threshold=0.005)
+                else:
+                    self.lr_scheduler = self._void_lr_scheduler
 
                 # evaluation mode
                 self._train(self.n_epochs_eva, mode='evaluation')
@@ -315,8 +322,13 @@ class train_mask():
             self._train(self.n_epochs_train, mode='training')
 
             # reset the lr and scheduler for the new mode
-            self.lr_scheduler._reset()
             self.optimizer = optim.Adam(self.network.parameters(), lr=self.init_lr)
+            if auto_lr_decay:
+                self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=self.lr_decay_factor, 
+                                                        patience=self.lr_decay_patience,
+                                                          cooldown=2, verbose=True, threshold=0.005)
+            else:
+                self.lr_scheduler = self._void_lr_scheduler
 
             print('Continue onto next {} epochs for evaluation mode'.format(self.n_epochs_eva))
             print('(Batch normalization running statistics frozen and used)')
