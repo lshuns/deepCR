@@ -463,7 +463,8 @@ class train_inpaint():
                     gpu=False, epoch_train=40, epoch_evaluate=220, batch_size=1, 
                     lr=1e-2, auto_lr_decay=True, lr_decay_patience=4, lr_decay_factor=0.1, stop_lr=1e-5,
                     use_tqdm=True, use_tqdm_notebook=False, directory='./',
-                    max_cores=1):
+                    max_cores=1,
+                    scale=1):
         """ 
             Train deepCR-inpaint model.
 
@@ -539,6 +540,8 @@ class train_inpaint():
             Directory to save trained model.
         max_cores : int, optional
             Maximum number of cores for parallel calculation
+        scale : float, optional 
+            Scaling the input image as img0/scale.
 
         Returns
         -------
@@ -569,9 +572,9 @@ class train_inpaint():
 
         # create torch dataset
         data_train = dataset_inpaint(train_data_dir, train_image_files, train_mask_files, train_inpaint_files,
-                    train_ignore_files, train_sky_val_list, aug_sky, gpu)
+                    train_ignore_files, train_sky_val_list, aug_sky, gpu, scale)
         data_val = dataset_inpaint(validation_data_dir, validation_image_files, validation_mask_files, validation_ipaint_files,
-                    validation_ignore_files, validation_sky_val_list, aug_sky, gpu)
+                    validation_ignore_files, validation_sky_val_list, aug_sky, gpu, scale)
         del train_data_dir, train_image_files, train_mask_files, train_inpaint_files, train_ignore_files, train_sky_val_list, aug_sky
         del validation_data_dir, validation_image_files, validation_mask_files, validation_ipaint_files, validation_ignore_files, validation_sky_val_list
 
@@ -746,6 +749,8 @@ class train_inpaint():
             self.lr_scheduler._reset()
             self.optimizer = optim.Adam(self.network.parameters(), lr=self.init_lr)
 
+            print(">>>>>>>>>> current_lr (after reset)", [group['lr'] for group in self.optimizer.param_groups][0])
+
             print('Continue onto next {} epochs for evaluation mode'.format(self.n_epochs_eva))
             print('(Batch normalization running statistics frozen and used)')
             print('')
@@ -827,6 +832,9 @@ class train_inpaint():
 
             # early stop if the lr is too low
             current_lr = [group['lr'] for group in self.optimizer.param_groups][0]
+
+            print(">>>>>>>>>> current_lr", current_lr)
+
             if current_lr <= self.stop_lr:
                 print(f'xxxxxxxxx stop {mode} because of convergence xxxxxxxxx')
                 break

@@ -72,7 +72,7 @@ class dataset(Dataset):
 
 class dataset_inpaint(Dataset):
     def __init__(self, data_dir, image_file_list, mask_file_list, inpaint_file_list, ignore_file_list=None, 
-                    sky_val_list=None, aug_sky=[0, 0], gpu=False):
+                    sky_val_list=None, aug_sky=[0, 0], gpu=False, scale=1):
         """ custom pytorch dataset class to load deepCR-mask training data
         :param data_dir: path where all images, masks and ignores are saved.
         :param image_file_list: A list of file names for images (file in .npy)
@@ -94,6 +94,7 @@ class dataset_inpaint(Dataset):
 
         self.sky_val_list = sky_val_list
         self.aug_sky = aug_sky
+        self.scale = scale
 
         ## determine which device to use
         if gpu:
@@ -135,11 +136,11 @@ class dataset_inpaint(Dataset):
             ignore = np.load(ignore_path)
 
             # expanding the dimension for convolution
-            return torch.from_numpy(image).to(self.device).type(self.dtype).view(1, shape_tmp, shape_tmp), \
+            return torch.from_numpy(image/self.scale).to(self.device).type(self.dtype).view(1, shape_tmp, shape_tmp), \
                     torch.from_numpy(mask).to(self.device).type(self.dtype).view(1, shape_tmp, shape_tmp), \
-                    torch.from_numpy(inpaint).to(self.device).type(self.dtype).view(1, shape_tmp, shape_tmp), \
+                    torch.from_numpy(inpaint/self.scale).to(self.device).type(self.dtype).view(1, shape_tmp, shape_tmp), \
                     torch.from_numpy(ignore).to(self.device).type(self.dtype).view(1, shape_tmp, shape_tmp)
         else:
-            return torch.from_numpy(image).to(self.device).type(self.dtype).view(1, shape_tmp, shape_tmp), \
+            return torch.from_numpy(image/self.scale).to(self.device).type(self.dtype).view(1, shape_tmp, shape_tmp), \
                     torch.from_numpy(mask).to(self.device).type(self.dtype).view(1, shape_tmp, shape_tmp), \
-                    torch.from_numpy(inpaint).to(self.device).type(self.dtype).view(1, shape_tmp, shape_tmp)        
+                    torch.from_numpy(inpaint/self.scale).to(self.device).type(self.dtype).view(1, shape_tmp, shape_tmp)        
