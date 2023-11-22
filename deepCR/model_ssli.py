@@ -125,7 +125,7 @@ class deepECR():
                 # to Tensor
                 img0 = from_numpy(np.expand_dims(img0 / self.scale, axis=(0, 1))).to(self.device).type(self.dtype)
                 mask = from_numpy(np.expand_dims(mask, axis=(0, 1))).to(self.device).type(self.dtype)
-                cat = torch.cat((img0 * (1 - mask), mask), dim=1)
+                cat = torch.cat((img0, mask), dim=1)
 
                 # make prediction
                 img1 = self.inpaintNet(cat)

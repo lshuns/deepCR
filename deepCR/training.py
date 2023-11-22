@@ -667,7 +667,7 @@ class train_inpaint():
                 del dat
 
                 # predict the inpaint
-                pdt_images = self.network(torch.cat((images * (1 - masks), masks), dim=1))
+                pdt_images = self.network(torch.cat((images, masks), dim=1))
                 del images
                 pdt_noCRs = pdt_images * masks
                 del pdt_images
@@ -787,7 +787,7 @@ class train_inpaint():
                 del dat
 
                 # predict the inpaint
-                pdt_images = self.network(torch.cat((images * (1 - masks), masks), dim=1))
+                pdt_images = self.network(torch.cat((images, masks), dim=1))
                 del images
                 pdt_noCRs = pdt_images * masks
                 del pdt_images
