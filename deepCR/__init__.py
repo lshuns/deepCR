@@ -15,4 +15,4 @@ from deepCR.training import train_mask, train_inpaint
 
 __all__ = ["deepECR", "deepCR", "train_mask", "train_inpaint"]
 
-__version__ = '0.2.0.2'
+__version__ = '0.2.0.3'
