@@ -337,16 +337,16 @@ class train_mask():
 
     def _train(self, epochs, mode='training'):
 
-        # training or evaluation mode
-        if mode == 'training':
-            self.network.train()
-        elif mode == 'evaluation':
-            self.network.eval()
-        else:
-            raise Exception(f"Unknown mode {mode}!")
-
         # loop over all epochs and train
         for epoch in self.tqdm(range(epochs), disable=self.disable_tqdm):
+
+            # training or evaluation mode
+            if mode == 'training':
+                self.network.train()
+            elif mode == 'evaluation':
+                self.network.eval()
+            else:
+                raise Exception(f"Unknown mode {mode}!")
 
             # running information
             print(f'>>>>>>>>> start epoch ({mode}) {self.epoch_mask} ---------')
@@ -758,16 +758,16 @@ class train_inpaint():
 
     def _train(self, epochs, mode='training'):
 
-        # training or evaluation mode
-        if mode == 'training':
-            self.network.train()
-        elif mode == 'evaluation':
-            self.network.eval()
-        else:
-            raise Exception(f"Unknown mode {mode}!")
-
         # loop over all epochs and train
         for epoch in self.tqdm(range(epochs), disable=self.disable_tqdm):
+
+            # training or evaluation mode
+            if mode == 'training':
+                self.network.train()
+            elif mode == 'evaluation':
+                self.network.eval()
+            else:
+                raise Exception(f"Unknown mode {mode}!")
 
             # running information
             print(f'>>>>>>>>> start epoch ({mode}) {self.epoch_mask} ---------')
