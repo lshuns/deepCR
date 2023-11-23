@@ -170,7 +170,8 @@ class train_mask():
         self.optimizer = optim.Adam(self.network.parameters(), lr=lr)
 
         # initialise the scheduler
-        if auto_lr_decay:
+        self.auto_lr_decay = auto_lr_decay
+        if self.auto_lr_decay:
             self.lr_decay_factor = lr_decay_factor
             self.lr_decay_patience = lr_decay_patience
             self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=lr_decay_factor, patience=lr_decay_patience,
@@ -300,7 +301,7 @@ class train_mask():
 
                 # reset the lr and scheduler for the new mode
                 self.optimizer = optim.Adam(self.network.parameters(), lr=self.init_lr)
-                if auto_lr_decay:
+                if self.auto_lr_decay:
                     self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=self.lr_decay_factor, 
                                                             patience=self.lr_decay_patience,
                                                               cooldown=2, verbose=True, threshold=0.005)
@@ -323,7 +324,7 @@ class train_mask():
 
             # reset the lr and scheduler for the new mode
             self.optimizer = optim.Adam(self.network.parameters(), lr=self.init_lr)
-            if auto_lr_decay:
+            if self.auto_lr_decay:
                 self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=self.lr_decay_factor, 
                                                         patience=self.lr_decay_patience,
                                                           cooldown=2, verbose=True, threshold=0.005)
@@ -607,8 +608,12 @@ class train_inpaint():
         self.optimizer = optim.Adam(self.network.parameters(), lr=lr)
 
         # initialise the scheduler
+        self.auto_lr_decay = auto_lr_decay
         if auto_lr_decay:
-            self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=lr_decay_factor, patience=lr_decay_patience,
+            self.lr_decay_factor = lr_decay_factor
+            self.lr_decay_patience = lr_decay_patience
+            self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=self.lr_decay_factor, 
+                                                    patience=self.lr_decay_patience,
                                                   cooldown=2, verbose=True, threshold=0.005)
         else:
             self.lr_scheduler = self._void_lr_scheduler
@@ -728,8 +733,13 @@ class train_inpaint():
                 self._train(self.n_epochs_train - self.epoch_mask, mode='training')
 
                 # reset the lr and scheduler for the new mode
-                self.lr_scheduler._reset()
                 self.optimizer = optim.Adam(self.network.parameters(), lr=self.init_lr)
+                if self.auto_lr_decay:
+                    self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=self.lr_decay_factor, 
+                                                            patience=self.lr_decay_patience,
+                                                          cooldown=2, verbose=True, threshold=0.005)
+                else:
+                    self.lr_scheduler = self._void_lr_scheduler
 
                 # evaluation mode
                 self._train(self.n_epochs_eva, mode='evaluation')
@@ -746,8 +756,13 @@ class train_inpaint():
             self._train(self.n_epochs_train, mode='training')
 
             # reset the lr and scheduler for the new mode
-            self.lr_scheduler._reset()
             self.optimizer = optim.Adam(self.network.parameters(), lr=self.init_lr)
+            if self.auto_lr_decay:
+                self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=self.lr_decay_factor, 
+                                                        patience=self.lr_decay_patience,
+                                                      cooldown=2, verbose=True, threshold=0.005)
+            else:
+                self.lr_scheduler = self._void_lr_scheduler
 
             print(">>>>>>>>>> current_lr (after reset)", [group['lr'] for group in self.optimizer.param_groups][0])
 
