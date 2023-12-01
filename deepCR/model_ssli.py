@@ -13,7 +13,7 @@ __all__ = ['deepECR']
 
 class deepECR():
 
-    def __init__(self, mask_model_path, 
+    def __init__(self, mask_model_path=None, 
                 inpaint_model_path=None,
                 gpu=False, scale=1):
 
@@ -22,7 +22,7 @@ class deepECR():
 
         Parameters
         ----------
-        mask_model_path : str
+        mask_model_path : (optional) str
             The file path to the trained model for mask (incl. '.pth')
         inpaint_model_path : (optional) str
             The file path to the trained model for inpaint (incl. '.pth')
@@ -46,21 +46,24 @@ class deepECR():
         print(f">>> Using {self.device} for prediction")
 
         # >>>>> the mask model
-        # load the learned model information
-        model_info = torch.load(mask_model_path, map_location=self.device)
-        ## the model configuration
-        nChannel_in, nChannel_out, nChannel_hidden, nLayers_down, return_type = model_info['network_config']
-        ## the model states
-        state_dict = model_info['model_state_dict']
-        del model_info
-        # initialise the network
-        self.maskNet = UNet(nChannel_in, nChannel_out, nChannel_hidden, 
-                            nLayers_down, return_type).to(self.device)
-        ## set states
-        self.maskNet.load_state_dict(state_dict)
-        del state_dict
-        # to evaluation mode
-        self.maskNet.eval()
+        if mask_model_path is not None:
+            # load the learned model information
+            model_info = torch.load(mask_model_path, map_location=self.device)
+            ## the model configuration
+            nChannel_in, nChannel_out, nChannel_hidden, nLayers_down, return_type = model_info['network_config']
+            ## the model states
+            state_dict = model_info['model_state_dict']
+            del model_info
+            # initialise the network
+            self.maskNet = UNet(nChannel_in, nChannel_out, nChannel_hidden, 
+                                nLayers_down, return_type).to(self.device)
+            ## set states
+            self.maskNet.load_state_dict(state_dict)
+            del state_dict
+            # to evaluation mode
+            self.maskNet.eval()
+        else:
+            self.maskNet = None
 
         # >>>>> the inpaint model
         if inpaint_model_path is not None:
@@ -93,19 +96,19 @@ class deepECR():
         :param binary: return binary CR mask if True. probabilistic mask if False
         :return: CR mask.
         """
-
-        # to reduce unnecessary gradient computations
-        with torch.no_grad():
-
-            # to Tensor
-            img0 = from_numpy(np.expand_dims(img0 / self.scale, axis=(0, 1))).to(self.device).type(self.dtype)
-            # make prediction
-            mask = self.maskNet(img0)
-            # back to numpy array
-            mask = np.squeeze(mask.cpu().numpy())
-
-        if binary:
-            mask = (mask > threshold).astype(int)
+        if (self.maskNet is None):
+            raise Exception(f'The mask model is not initialised, cannot predict CR mask!')
+        else:
+            # to reduce unnecessary gradient computations
+            with torch.no_grad():
+                # to Tensor
+                img0 = from_numpy(np.expand_dims(img0 / self.scale, axis=(0, 1))).to(self.device).type(self.dtype)
+                # make prediction
+                mask = self.maskNet(img0)
+                # back to numpy array
+                mask = np.squeeze(mask.cpu().numpy())
+            if binary:
+                mask = (mask > threshold).astype(int)
         return mask
 
     def PredInpaint(self, img0, mask):
@@ -121,17 +124,13 @@ class deepECR():
         else:
             # to reduce unnecessary gradient computations
             with torch.no_grad():
-    
                 # to Tensor
                 img0 = from_numpy(np.expand_dims(img0 / self.scale, axis=(0, 1))).to(self.device).type(self.dtype)
                 mask = from_numpy(np.expand_dims(mask, axis=(0, 1))).to(self.device).type(self.dtype)
                 cat = torch.cat((img0, mask), dim=1)
-
                 # make prediction
                 img1 = self.inpaintNet(cat)
                 inpainted = img1 * mask + img0 * (1 - mask)
-
                 ## back to numpy array
                 inpainted = np.squeeze(inpainted.cpu().numpy())
-
         return inpainted * self.scale
