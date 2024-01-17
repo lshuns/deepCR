@@ -1,8 +1,13 @@
+# -*- coding: utf-8 -*-
+# @Author: https://github.com/profjsb/deepCR/blob/master/deepCR/model.py
+# @Date:   2023-11-01 16:42:45
+# @Last Modified by:   lshuns
+# @Last Modified time: 2024-01-17 16:43:24
+
 """main module to instantiate deepCR models and use them
 """
 
 import torch
-import torch.nn as nn
 from torch import from_numpy
 
 import numpy as np
@@ -128,6 +133,30 @@ class deepECR():
                 img0 = from_numpy(np.expand_dims(img0 / self.scale, axis=(0, 1))).to(self.device).type(self.dtype)
                 mask = from_numpy(np.expand_dims(mask, axis=(0, 1))).to(self.device).type(self.dtype)
                 cat = torch.cat((img0, mask), dim=1)
+                # make prediction
+                img1 = self.inpaintNet(cat)
+                inpainted = img1 * mask + img0 * (1 - mask)
+                ## back to numpy array
+                inpainted = np.squeeze(inpainted.cpu().numpy())
+        return inpainted * self.scale
+    
+    def PredInpaintOBJ(self, img0, mask):
+        """
+            inpaint img0 under mask for models trained with train_inpaint_obj
+        :param img0: (np.ndarray) input image
+        :param mask: (np.ndarray) inpainting mask
+        :return: inpainted clean image
+        """
+
+        if (self.inpaintNet is None):
+            raise Exception(f'The inpaint model is not initialised, cannot inpaint!')
+        else:
+            # to reduce unnecessary gradient computations
+            with torch.no_grad():
+                # to Tensor
+                img0 = from_numpy(np.expand_dims(img0 / self.scale, axis=(0, 1))).to(self.device).type(self.dtype)
+                mask = from_numpy(np.expand_dims(mask, axis=(0, 1))).to(self.device).type(self.dtype)
+                cat = torch.cat((img0*(1-mask), mask), dim=1)
                 # make prediction
                 img1 = self.inpaintNet(cat)
                 inpainted = img1 * mask + img0 * (1 - mask)
