@@ -2,7 +2,7 @@
 # @Author: https://github.com/profjsb/deepCR/blob/master/deepCR/training.py
 # @Date:   2023-10-20 17:38:53
 # @Last Modified by:   lshuns
-# @Last Modified time: 2024-01-17 16:43:08
+# @Last Modified time: 2024-02-07 11:44:47
 
 """ module for training new deepCR-mask models
 """
@@ -244,10 +244,10 @@ class train_mask():
 
                 # compute the loss
                 if ignores is not None:
-                    loss = self.loss_fn(pdt_masks * (1 - ignores), masks * (1 - ignores))
-                else:
-                    loss = self.loss_fn(pdt_masks, masks)                    
+                    pdt_masks = pdt_masks * (1 - ignores)
+                    masks = masks * (1 - ignores)
                 del ignores
+                loss = self.loss_fn(pdt_masks, masks)                    
 
                 # sum up loss
                 lmask += float(loss) * n
@@ -377,10 +377,11 @@ class train_mask():
 
                 # compute the loss
                 if ignores is not None:
-                    loss = self.loss_fn(pdt_masks * (1 - ignores), masks * (1 - ignores))
-                else:
-                    loss = self.loss_fn(pdt_masks, masks)                    
-                del ignores, pdt_masks, masks
+                    pdt_masks = pdt_masks * (1 - ignores)
+                    masks = masks * (1 - ignores)
+                del ignores
+                loss = self.loss_fn(pdt_masks, masks)                    
+                del pdt_masks, masks
 
                 # backpropagation
                 self.optimizer.zero_grad()
