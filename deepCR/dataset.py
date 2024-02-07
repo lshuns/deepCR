@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-# @Author: lshuns
+# @Author: https://github.com/profjsb/deepCR/tree/master
 # @Date:   2023-10-21 14:28:56
 # @Last Modified by:   lshuns
-# @Last Modified time: 2024-01-17 16:27:58
+# @Last Modified time: 2024-02-07 11:30:06
 import os
 import numpy as np
 
