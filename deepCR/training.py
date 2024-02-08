@@ -2,7 +2,7 @@
 # @Author: https://github.com/profjsb/deepCR/blob/master/deepCR/training.py
 # @Date:   2023-10-20 17:38:53
 # @Last Modified by:   lshuns
-# @Last Modified time: 2024-02-08 09:43:40
+# @Last Modified time: 2024-02-08 09:50:46
 
 """ module for training new deepCR-mask models
 """
@@ -162,6 +162,7 @@ class train_mask():
         self.gpu = gpu
         if self.gpu:
             device = "cuda"
+            torch.cuda.empty_cache()
         else:
             device = "cpu"
         print(f">>> Using {device} for training")
@@ -610,6 +611,7 @@ class train_inpaint():
         self.gpu = gpu
         if gpu:
             device = "cuda"
+            torch.cuda.empty_cache()
         else:
             device = "cpu"
         print(f">>> Using {device} for training")
@@ -1073,6 +1075,7 @@ class train_inpaint_obj():
         self.gpu = gpu
         if gpu:
             device = "cuda"
+            torch.cuda.empty_cache()
         else:
             device = "cpu"
         print(f">>> Using {device} for training")
