@@ -2,7 +2,7 @@
 # @Author: https://github.com/profjsb/deepCR/blob/master/deepCR/training.py
 # @Date:   2023-10-20 17:38:53
 # @Last Modified by:   lshuns
-# @Last Modified time: 2024-02-08 09:50:46
+# @Last Modified time: 2024-02-10 11:00:47
 
 """ module for training new deepCR-mask models
 """
@@ -273,10 +273,18 @@ class train_mask():
 
         return (lmask)
 
-    def train(self, resume=False):
+    def train(self, resume=False, start_model=None):
         """ call this function to start training network
         :return: None
         """
+
+        if start_model is not None:
+            # keep training based on previous model
+            ## load the model
+            checkpoint = torch.load(start_model)
+            self.network.load_state_dict(checkpoint['model_state_dict'])
+            del checkpoint
+            print('+++ start model loaded from {}'.format(start_model))
 
         if resume:
             # find the checkpoint
